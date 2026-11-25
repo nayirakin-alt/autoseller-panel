@@ -7,8 +7,8 @@ import { api, ago, money, parseMoney } from '@/lib/format';
  *  - "Odeme al": bot is emri (kasaya /pay). Uye "uzaktan odeme" onayi vermediyse olusturulamaz.
  *  - "+odeme": sadece kasada GORULMUS ve eslesmemis bir odeme secilerek borca dusulur.
  */
-export function AccountPayRow({ account, owner, receiver, colSpan, mode, onDone, onClose }: {
-  account: any; owner: any; receiver: string; colSpan: number; mode: 'job' | 'manual';
+export function AccountPayRow({ account, receiver, colSpan, mode, onDone, onClose }: {
+  account: any; receiver: string; colSpan: number; mode: 'job' | 'manual';
   onDone: () => void; onClose: () => void;
 }) {
   const [amount, setAmount] = useState(Number(account.pending_debt) > 0 ? String(account.pending_debt) : '');
@@ -18,7 +18,6 @@ export function AccountPayRow({ account, owner, receiver, colSpan, mode, onDone,
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
   const [received, setReceived] = useState<any[] | null>(null);
-  const consent = !!owner?.remote_pay_consent_at;
   const amt = parseMoney(amount);
 
   useEffect(() => {
@@ -39,20 +38,14 @@ export function AccountPayRow({ account, owner, receiver, colSpan, mode, onDone,
       </div>
 
       {mode === 'job' && <>
-        {!consent && (
-          <div className="err" style={{ marginTop: 8 }}>
-            {account.owner_name} panelinde "Uzaktan ödemeye izin ver" onayını vermemiş. Onay vermeden ödeme emri oluşturulamaz;
-            kullanıcıdan panelinin "Hesaplarım" sekmesindeki onayı açmasını iste.
-          </div>
-        )}
         {!receiver && <div className="err" style={{ marginTop: 8 }}>Kasa hesabı seçilmemiş (Operatör Hesapları sekmesi).</div>}
         <div className="row" style={{ marginTop: 8 }}>
           <span>Kasa: <b>{receiver || '—'}</b></span>
-          <input placeholder="Tutar (örn. 25m)" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 150 }} disabled={!consent} />
-          <label className="row"><input type="checkbox" checked={commission} onChange={(e) => setCommission(e.target.checked)} disabled={!consent} />
+          <input placeholder="Tutar (örn. 25m)" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 150 }} />
+          <label className="row"><input type="checkbox" checked={commission} onChange={(e) => setCommission(e.target.checked)} />
             Komisyon borcundan düş (borç {money(account.pending_debt)})</label>
-          <input placeholder="Oyuncuya not (isteğe bağlı)" value={note} onChange={(e) => setNote(e.target.value)} style={{ minWidth: 220 }} disabled={!consent} />
-          <button className="primary" disabled={busy || !consent || !receiver || !(amt > 0)}
+          <input placeholder="Oyuncuya not (isteğe bağlı)" value={note} onChange={(e) => setNote(e.target.value)} style={{ minWidth: 220 }} />
+          <button className="primary" disabled={busy || !receiver || !(amt > 0)}
             onClick={() => run(async () => {
               const r = await api('/api/admin/jobs', { method: 'POST', json: { accountId: account.id, kind: 'PAY', amount: amt,
                 applyToCommission: commission, message: note || undefined } });
@@ -60,7 +53,8 @@ export function AccountPayRow({ account, owner, receiver, colSpan, mode, onDone,
             })}>Ödeme al {amt > 0 ? `(${money(amt)})` : ''}</button>
         </div>
         <p className="muted">{account.online ? 'Bot şu an bağlı.' : 'Bot şu an bağlı değil; bağlanırsa 30 dk içinde çalışır, yoksa emir düşer.'}
-          {' '}Borç, ancak bot ödemeyi bildirdiğinde düşer; kasa "paid you" ile doğrular. Mod v0.7.1+ gerekir.</p>
+          {' '}Bot, bakiye yeterliyse tutarı kasaya gönderir; yetersizse "yetersiz bakiye" olarak raporlar. "Komisyon borcundan düş"
+          seçili ise ödeme borca sayılır (kasa "paid you" ile doğrular). Mod v0.7.1+ gerekir.</p>
       </>}
 
       {mode === 'manual' && <>

@@ -164,7 +164,7 @@ export default function OperatorPanel() {
                   </td>
                 </tr>
                 {payOpen?.id === a.id && (
-                  <AccountPayRow account={a} owner={d.users.find((u: any) => u.id === a.owner_id)} receiver={receiver} colSpan={12}
+                  <AccountPayRow account={a} receiver={receiver} colSpan={12}
                     mode={payOpen!.mode} onDone={() => { setJobsVersion((v) => v + 1); load(); }} onClose={() => setPayOpen(null)} />
                 )}
                 </Fragment>);
@@ -263,7 +263,7 @@ export default function OperatorPanel() {
       )}
 
       {tab === 'requests' && <>
-        <AdminJobs accounts={d.accounts} users={d.users} receiver={receiver} version={jobsVersion} />
+        <AdminJobs accounts={d.accounts} receiver={receiver} version={jobsVersion} />
       </>}
       {tab === 'ranks' && <AdminRanks users={d.users} />}
       {tab === 'earnings' && <><SalesLog scope="admin" /><Earnings scope="admin" /></>}

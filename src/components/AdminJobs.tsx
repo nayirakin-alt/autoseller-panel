@@ -10,7 +10,7 @@ export const JOB_STATUS: Record<string, string> = {
 const statusClass = (s: string) => (s === 'DONE' ? 'green' : s === 'FAILED' || s === 'EXPIRED' ? 'red' : s === 'CANCELLED' ? 'muted' : 'accent');
 
 /** Operator: "Odeme al" ve "Bildirim" bot is emirleri */
-export function AdminJobs({ accounts, users, receiver, version }: { accounts: any[]; users?: any[]; receiver: string; version?: number }) {
+export function AdminJobs({ accounts, receiver, version }: { accounts: any[]; receiver: string; version?: number }) {
   const [jobs, setJobs] = useState<any[] | null>(null);
   const [err, setErr] = useState('');
   const [acc, setAcc] = useState('');
@@ -30,7 +30,6 @@ export function AdminJobs({ accounts, users, receiver, version }: { accounts: an
   const ownerOf = (id: string) => accounts.find((a) => a.id === id)?.owner_name ?? '';
   const amt = parseMoney(amount);
   const sel = accounts.find((a) => a.id === acc);
-  const selConsent = !sel || !users || !!users.find((u) => u.id === sel.owner_id)?.remote_pay_consent_at;
 
   return (
     <>
@@ -39,7 +38,7 @@ export function AdminJobs({ accounts, users, receiver, version }: { accounts: an
           <h2>Ödeme al (kasaya aktar)</h2>
           <p className="muted">Onay beklemez: emir bota iletilir, bot oyunda oyuncuya bildirim gösterir ve
             <code> /pay {receiver || 'KASA'} tutar</code> komutunu gönderir. Bot bağlı değilse bağlandığında (30 dk içinde) çalışır.
-            Oyuncunun panelde "uzaktan ödeme" onayı vermiş olması ve mod sürümünün 0.7.1+ olması gerekir.</p>
+            Mod sürümünün 0.7.1+ olması gerekir.</p>
           <div className="row">
             <select value={acc} onChange={(e) => setAcc(e.target.value)}>
               <option value="">— MC hesabı —</option>
@@ -53,14 +52,13 @@ export function AdminJobs({ accounts, users, receiver, version }: { accounts: an
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <input placeholder="Oyuncuya not (isteğe bağlı)" value={msg} onChange={(e) => setMsg(e.target.value)} style={{ minWidth: 260 }} />
-            <button className="primary" disabled={!acc || !(amt > 0) || !receiver || !selConsent}
+            <button className="primary" disabled={!acc || !(amt > 0) || !receiver}
               onClick={act(async () => {
                 await api('/api/admin/jobs', { method: 'POST', json: { accountId: acc, kind: 'PAY', amount: amt, applyToCommission: commission, message: msg || undefined } });
                 setAmount(''); setMsg('');
               })}>Ödeme al {amt > 0 ? `(${money(amt)})` : ''}</button>
           </div>
           {!receiver && <div className="err">Önce Operatör Hesapları sekmesinden kasa hesabını seç.</div>}
-          {!selConsent && <div className="err">{sel?.owner_name} "Uzaktan ödemeye izin ver" onayını vermemiş; ödeme emri oluşturulamaz.</div>}
         </div>
         <div className="card">
           <h2>Bildirim gönder</h2>

@@ -99,7 +99,7 @@ export default function MemberPanel() {
 
       {tab === 'rank' && <RankShop onChange={load} />}
       {tab === 'earnings' && <><SalesLog scope="member" /><Earnings scope="member" /></>}
-      {tab === 'accounts' && me.consentAt && <MemberJobs consentAt={me.remotePayConsentAt ?? null} receiver={receiver} onChange={load} />}
+      {tab === 'accounts' && me.consentAt && <MemberJobs />}
 
       {tab === 'accounts' && <div className="card">
         <h2>Minecraft hesaplarım</h2>

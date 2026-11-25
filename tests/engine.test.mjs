@@ -11,7 +11,7 @@ const db = new PGlite();
 for (const f of ['tests/supabase-stub.sql', 'supabase/migrations/0001_schema.sql',
                  'supabase/migrations/0002_engine.sql', 'supabase/migrations/0003_rls.sql',
                  'supabase/migrations/0004_security.sql', 'supabase/migrations/0005_ranks_requests_earnings.sql',
-                 'supabase/migrations/0006_jobs_sales.sql', 'supabase/migrations/0007_manual_payment_guard.sql']) {
+                 'supabase/migrations/0006_jobs_sales.sql', 'supabase/migrations/0007_manual_payment_guard.sql', 'supabase/migrations/0008_drop_remote_pay_consent.sql']) {
   await db.exec(fs.readFileSync(path.join(root, f), 'utf8'));
 }
 // 1-13 arasi senaryolar %40 uzerine yazildi: Bronze'u gecici olarak %40 yap (bolum 14'te %50'ye doner)
@@ -387,11 +387,10 @@ check('her operatorun sifirlamasi kendine ait', eo.hourly.length === 1);
 
 console.log('\n[17] Bot is emirleri: Odeme al / Bildirim (0006)');
 const T7 = 7 * DAY;
-err = '';
-try { await q(`select admin_create_job($1,$2,'PAY',$3,'test',true,$4)`, [OP, acc4.id, 20 * M, nt(T7)]); } catch (e) { err = e.message; }
-check('uye uzaktan odeme onayi vermeden PAY emri olusmaz', err.includes('NO_REMOTE_PAY_CONSENT'), err);
-await q(`select member_remote_pay_consent($1,true)`, [U3]);
+// 0008: uzaktan odeme onayi artik sart degil (onay verilmeden olusturulabilir)
 const job1 = (await one(`select admin_create_job($1,$2,'PAY',$3,'haftalik tahsilat',true,$4) id`, [OP, acc4.id, 20 * M, nt(T7)])).id;
+check('uzaktan odeme onayi olmadan PAY emri olusturulabilir (0008)', Number(job1) > 0
+      && (await one(`select remote_pay_consent_at from profiles where id=$1`, [U3])).remote_pay_consent_at === null);
 err = '';
 try { await q(`select admin_create_job($1,$2,'PAY',$3,null,true,$4)`, [OP, acc4.id, 1 * M, nt(T7)]); } catch (e) { err = e.message; }
 check('ayni hesapta bitmemis PAY emri varken ikincisi olusmaz', err.includes('JOB_PENDING'));
