@@ -13,7 +13,7 @@ export const GET = handle(async () => {
     sb.from('v_operator_account_overview').select('*').order('mc_name'),
     sb.from('payments').select('id, mc_account_id, amount, tax, to_player, status, source, claimed_at, chat_line, unallocated')
       .eq('status', 'CLAIMED').order('claimed_at'),
-    sb.from('profiles').select('id, display_name, role, status, suspended_reason, consent_at, created_at').order('created_at'),
+    sb.from('profiles').select('id, display_name, role, status, suspended_reason, consent_at, remote_pay_consent_at, created_at').order('created_at'),
     sb.from('security_events').select('id', { count: 'exact', head: true }).neq('severity', 'INFO').gte('at', since),
   ]);
   const rows = acc.data ?? [];

@@ -299,3 +299,41 @@ Mod koduna ve mod uçlarına dokunulmadı; mod komisyon oranını zaten sunucuda
   - `GET/POST /api/admin/payment-requests` (`create`, `resolve`)
   - `GET/POST /api/admin/earnings` (sıfırlama)
   - `POST /api/admin/security/purge-operator`
+
+## 10. Bot iş emirleri ve ürün bazlı satış kayıtları (0006, mod v0.7.1)
+
+**Ödeme al (ödeme talebinin yerine geçer):**
+- Operatör bir MC hesabı ve tutar seçer → `bot_jobs` tablosuna `PAY` emri yazılır. Onay bekleme adımı yoktur.
+- Mod emri heartbeat cevabının `jobs` alanından alır (en geç ~30 sn). Önce `POST /api/mod/jobs/ack {status: RECEIVED}` gönderir; bundan sonra emir iptal edilemez.
+- Ardından oyunda bildirim gösterir, bakiyeyi kontrol eder ve `/pay <kasa> <tutar>` gönderir. Sonucu `DONE`, `UNVERIFIED` ya da `FAILED` (bakiye yetersiz / sunucu reddetti) olarak bildirir.
+- Teslim en az bir kez yapılır: RECEIVED gelene kadar emir her heartbeat'te tekrar gönderilir. Mod emir numarasıyla aynı emri iki kez çalıştırmaz. `/pay` gönderilmeden önce emir diske `PAYING` olarak yazılır; oyun kapanırsa tekrar ödenmez, `UNVERIFIED` bildirilir.
+- **"Komisyon borcundan düş" açık (varsayılan):** sonuç, emrin `tx_id`'siyle `mod_report_payment` üzerinden `payments` tablosuna yazılır. Borçtan FIFO düşülür ve kasa "paid you" ile doğrular.
+- **Kapalı:** ayrı tahsilattır. Kasada görülen ödeme `match_job_payments` ile emre eşleştirilir. Bu ödeme rütbe siparişine ya da eski talebe eşleşmez.
+- **Koşullar:**
+  - Üyenin panelde "uzaktan ödeme" onayı vermiş olması (`profiles.remote_pay_consent_at`); onay geri alınabilir.
+  - Mod sürümünün `job_min_mod_version` (0.7.1) veya üstü olması.
+  - Hesap başına aynı anda en fazla 1 açık PAY emri.
+  - 30 dk içinde teslim alınmayan emir `EXPIRED` olur.
+- **Bildirim (`NOTIFY`):** oyuncunun ekranında `[Operatör]` mesajı olarak görünür; onay gerektirmez.
+- `admin_create_payment_request` artık hata verir. Eski talepler listelenip kapatılabilir.
+
+**Satış geçmişi (`mod_sales`):**
+- Mod v0.7.1, oyundaki satış mesajlarından her satış için şu bilgileri heartbeat'le gönderir (en fazla 50'şer): ürün (itemId ve ad), adet, satış fiyatı, maliyet, ilan vergisi, net kâr ve eşleşme türü (`single`, `batch`, `early`, `unmatched`).
+- `client_id` sayesinde tekrar gönderim çift kayıt yapmaz.
+- Kayıtlar yalnızca gösterim içindir; komisyon yine `profitDelta`'dan hesaplanır.
+- `sales_report`, 0005'teki `STATS` sıfırlamasına tabidir; izole sıfırlama burada da geçerlidir.
+
+**Yeni uçlar:**
+- Mod: `POST /api/mod/jobs/ack`. Heartbeat isteğine `sales[]` alanı, cevabına `jobs[]` ve `sales_saved` alanları eklendi; eski mod bunları yok sayar.
+- Operatör: `GET/POST /api/admin/jobs`, `DELETE /api/admin/jobs/:id`, `GET /api/admin/sales`.
+- Üye: `GET /api/me/sales`, `POST /api/me/remote-pay-consent`.
+
+## 11. "+ödeme" koruması ve hesap satırı "Ödeme al" (0007, sadece panel)
+
+- Üye Hesapları satırındaki **Ödeme al** butonu, satırın altında bir form açar: kasa, tutar, "komisyon borcundan düş" seçeneği ve not.
+  - Bu form bir `PAY` bot iş emri oluşturur (bkz. bölüm 10).
+  - Üye "uzaktan ödeme" onayı vermemişse form kilitli kalır ve bir uyarı gösterir.
+- **+ödeme** artık borcu kanıtsız düşmez; `admin_manual_payment` hata verir.
+  - Yalnızca kasada görülmüş ve hiçbir kayda bağlanmamış bir gelen ödeme (`received_payments`) seçilebilir.
+  - Seçilen ödeme `admin_manual_payment_from_received` ile doğrulanmış ödeme olarak borca sayılır. Aynı gelen ödeme ikinci kez kullanılamaz.
+- Eski "ödeme talebi" arayüzü gizlendi. Tablo ve eski kayıtlar veritabanında duruyor; kasa ödemesi gelirse eşleştirme yine çalışır.

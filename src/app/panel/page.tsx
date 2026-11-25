@@ -3,6 +3,8 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { RankShop } from '@/components/RankShop';
 import { Earnings } from '@/components/Earnings';
+import { SalesLog } from '@/components/SalesLog';
+import { MemberJobs } from '@/components/MemberJobs';
 import { api, ago, duration, money } from '@/lib/format';
 
 type Account = Record<string, any>;
@@ -96,7 +98,8 @@ export default function MemberPanel() {
       </div>
 
       {tab === 'rank' && <RankShop onChange={load} />}
-      {tab === 'earnings' && <Earnings scope="member" />}
+      {tab === 'earnings' && <><SalesLog scope="member" /><Earnings scope="member" /></>}
+      {tab === 'accounts' && me.consentAt && <MemberJobs consentAt={me.remotePayConsentAt ?? null} receiver={receiver} onChange={load} />}
 
       {tab === 'accounts' && <div className="card">
         <h2>Minecraft hesaplarım</h2>

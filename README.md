@@ -15,6 +15,7 @@ supabase/migrations/
   0004_security.sql güvenlik / kurcalama logları, bütünlük raporu, bakiye-kâr tutarlılığı
   0005_ranks_requests_earnings.sql  rütbeler, rütbe siparişi/yükseltme/hediye, ödeme talepleri,
                     kazanç kayıtları, izole sıfırlama, operatör hesabı log düzeltmesi
+  0006_jobs_sales.sql  bot iş emirleri (Ödeme al / Bildirim), ürün bazlı satış kayıtları
 src/
   app/api/mod/      mod uçları (Bearer token + HMAC imza, Mojang doğrulaması)
   app/api/me/       üye uçları
@@ -23,13 +24,13 @@ src/
   app/login, app/panel, app/admin   panel sayfaları
   lib/              supabase istemcileri, rol kontrolü, mod kimlik doğrulama
 tests/
-  engine.test.mjs   92 senaryo (komisyon, süre, ödeme, erişim, RLS, kurcalama, rütbe, talep, kazanç, sıfırlama)
+  engine.test.mjs   115 senaryo (komisyon, süre, ödeme, erişim, RLS, kurcalama, rütbe, talep, kazanç, sıfırlama)
   modauth.test.ts   imza / token / kod
 ```
 
 ## Hızlı kurulum (özet)
 
-1. Supabase: 5 migration dosyasını sırayla çalıştır (mevcut kurulumda sadece `0005`), e-posta kaydını kapat, kullanıcıları davet et, kendini OPERATOR yap.
+1. Supabase: 6 migration dosyasını sırayla çalıştır (mevcut kurulumda sadece `0006`), e-posta kaydını kapat, kullanıcıları davet et, kendini OPERATOR yap.
 2. Vercel: repoyu bağla, `.env.example`'daki 4 değişkeni gir, deploy.
 3. Operatör paneli → Operatör Hesapları: kasa hesabını ekle ve "Kasa" olarak seç.
 4. Mod: `gradle.properties` → `panel_url=…`, derle, çıkan SHA-256'yı Ayarlar → İzinli mod jar listesine ekle.

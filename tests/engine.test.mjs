@@ -10,7 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const db = new PGlite();
 for (const f of ['tests/supabase-stub.sql', 'supabase/migrations/0001_schema.sql',
                  'supabase/migrations/0002_engine.sql', 'supabase/migrations/0003_rls.sql',
-                 'supabase/migrations/0004_security.sql', 'supabase/migrations/0005_ranks_requests_earnings.sql']) {
+                 'supabase/migrations/0004_security.sql', 'supabase/migrations/0005_ranks_requests_earnings.sql',
+                 'supabase/migrations/0006_jobs_sales.sql', 'supabase/migrations/0007_manual_payment_guard.sql']) {
   await db.exec(fs.readFileSync(path.join(root, f), 'utf8'));
 }
 // 1-13 arasi senaryolar %40 uzerine yazildi: Bronze'u gecici olarak %40 yap (bolum 14'te %50'ye doner)
@@ -336,11 +337,12 @@ try { await q(`select admin_gift_rank($1,$2,'GOLD',3600,null,null)`, [U3, U3]); 
 check('uye hediye veremez', err.includes('FORBIDDEN') || err.includes('OPERATOR') || err.length > 0, err);
 
 console.log('\n[15] Odeme talepleri (0005)');
-const req = (await one(`select admin_create_payment_request($1,$2,null,$3,'turnuva katilim',null) id`, [OP, U3, 5 * M])).id;
+// 0006 ile olusturma kapatildi; eski kayitlarin eslesmesini dogrudan eklenen satirlarla test et
+const req = (await one(`insert into payment_requests (user_id, amount, pay_to, note, created_by, created_at) values ($1,$2,'OpBank','turnuva katilim',$3,$4) returning id`, [U3, 5 * M, OP, nt(5 * DAY - 60)])).id;
 await q(`insert into received_payments (receiver_mc, from_player, amount, tolerance, seen_at) values ('OpBank','Rank3',$1,0,$2)`, [5 * M, nt(5 * DAY)]);
 await q(`select match_extra_payments($1)`, [nt(5 * DAY + 180)]);
 check('kasaya gelen 5M odeme talebini kapatti', (await one(`select status from payment_requests where id=$1`, [req])).status === 'PAID');
-const req2 = (await one(`select admin_create_payment_request($1,$2,$3,$4,null,null) id`, [OP, U3, acc4.id, 7 * M])).id;
+const req2 = (await one(`insert into payment_requests (user_id, mc_account_id, amount, pay_to, created_by, created_at) values ($1,$2,$3,'OpBank',$4,$5) returning id`, [U3, acc4.id, 7 * M, OP, nt(6 * DAY - 60)])).id;
 await q(`insert into payments (mc_account_id, client_tx_id, to_player, amount, claimed_at) values ($1,$2,'OpBank',$3,$4)`,
         [acc4.id, randomUUID(), 7 * M, nt(6 * DAY)]);
 await q(`insert into received_payments (receiver_mc, from_player, amount, tolerance, seen_at) values ('OpBank','Rank3',$1,0,$2)`, [7 * M, nt(6 * DAY + 5)]);
@@ -382,6 +384,122 @@ await q(`insert into auth.users (id, email) values ($1,'op2@x')`, [OP2]);
 await q(`update profiles set role='OPERATOR' where id=$1`, [OP2]);
 eo = (await one(`select earnings_report($1,'OPERATOR',$2,$3) r`, [OP2, acc4.id, nt(800)])).r;
 check('her operatorun sifirlamasi kendine ait', eo.hourly.length === 1);
+
+console.log('\n[17] Bot is emirleri: Odeme al / Bildirim (0006)');
+const T7 = 7 * DAY;
+err = '';
+try { await q(`select admin_create_job($1,$2,'PAY',$3,'test',true,$4)`, [OP, acc4.id, 20 * M, nt(T7)]); } catch (e) { err = e.message; }
+check('uye uzaktan odeme onayi vermeden PAY emri olusmaz', err.includes('NO_REMOTE_PAY_CONSENT'), err);
+await q(`select member_remote_pay_consent($1,true)`, [U3]);
+const job1 = (await one(`select admin_create_job($1,$2,'PAY',$3,'haftalik tahsilat',true,$4) id`, [OP, acc4.id, 20 * M, nt(T7)])).id;
+err = '';
+try { await q(`select admin_create_job($1,$2,'PAY',$3,null,true,$4)`, [OP, acc4.id, 1 * M, nt(T7)]); } catch (e) { err = e.message; }
+check('ayni hesapta bitmemis PAY emri varken ikincisi olusmaz', err.includes('JOB_PENDING'));
+let jl = (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 10)])).r;
+check('mod 0.7.0 -> emir gonderilmez (eski mod anlamaz)', jl.length === 0);
+await q(`update bot_sessions set mod_version='0.7.1' where token_hash=$1`, [tok4]);
+jl = (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 20)])).r;
+check('mod 0.7.1 -> PAY emri heartbeat ile gider (kasa, tutar, txId)', jl.length === 1 && jl[0].kind === 'PAY'
+      && Number(jl[0].amount) === 20 * M && jl[0].payTo === 'OpBank' && jl[0].txId);
+jl = (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 50)])).r;
+check('mod almadi derse (RECEIVED yok) tekrar gonderilir', jl.length === 1
+      && (await one(`select delivered_count from bot_jobs where id=$1`, [job1])).delivered_count === 2);
+r = (await one(`select mod_job_ack($1,$2,'RECEIVED',null,null,null,$3) r`, [tok4, job1, nt(T7 + 51)])).r;
+jl = (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 80)])).r;
+check('RECEIVED sonrasi tekrar gonderilmez', r.ok && jl.length === 0);
+err = '';
+try { await q(`select admin_cancel_job($1,$2,null)`, [OP, job1]); } catch (e) { err = e.message; }
+check('mod teslim aldiktan sonra iptal edilemez', err.includes('JOB_NOT_CANCELLABLE'));
+const pBefore = (await one(`select count(*)::int n from payments where mc_account_id=$1`, [acc4.id])).n;
+r = (await one(`select mod_job_ack($1,$2,'DONE',400000,'You paid OpBank $ 20M (+ $ 400k tax)',null,$3) r`, [tok4, job1, nt(T7 + 90)])).r;
+const jrow = await one(`select * from bot_jobs where id=$1`, [job1]);
+const prow = await one(`select * from payments where id=$1`, [jrow.payment_id]);
+check('DONE + komisyona say -> payments kaydi (ayni txId), kasa dogrulamasi bekliyor', r.ok && jrow.status === 'DONE'
+      && prow && prow.client_tx_id === jrow.tx_id && Number(prow.amount) === 20 * M && prow.status === 'CLAIMED'
+      && (await one(`select count(*)::int n from payments where mc_account_id=$1`, [acc4.id])).n === pBefore + 1);
+r = (await one(`select mod_job_ack($1,$2,'DONE',400000,'tekrar',null,$3) r`, [tok4, job1, nt(T7 + 95)])).r;
+check('ayni sonuc tekrar gelirse ikinci odeme yazilmaz', r.duplicate === true
+      && (await one(`select count(*)::int n from payments where mc_account_id=$1`, [acc4.id])).n === pBefore + 1);
+
+// komisyona sayilmayan tahsilat + bekleyen rutbe siparisi ayni tutarda olsa bile karismaz
+await q(`select admin_set_rank($1,'GOLD',0.40,80000000)`, [OP]);
+const job2 = (await one(`select admin_create_job($1,$2,'PAY',$3,'turnuva',false,$4) id`, [OP, acc4.id, 80 * M, nt(T7 + 200)])).id;
+const ord3 = (await one(`select member_create_rank_order($1,'AMETIS',1,$2) r`, [U3, nt(T7 + 200)])).r;
+await q(`select mod_pull_jobs($1,$2)`, [tok4, nt(T7 + 210)]);
+await q(`select mod_job_ack($1,$2,'RECEIVED',null,null,null,$3)`, [tok4, job2, nt(T7 + 211)]);
+await q(`insert into received_payments (receiver_mc, from_player, amount, tolerance, seen_at) values ('OpBank','Rank3',$1,0,$2)`, [80 * M, nt(T7 + 215)]);
+await q(`select match_extra_payments($1)`, [nt(T7 + 500)]);
+check('is emri sonucu gelmeden gelen odeme rutbe siparisine yazilmaz', (await one(`select status from rank_orders where id=$1`, [ord3.id])).status === 'PENDING');
+await q(`select mod_job_ack($1,$2,'DONE',1600000,'You paid OpBank $ 80M',null,$3)`, [tok4, job2, nt(T7 + 520)]);
+const j2 = await one(`select * from bot_jobs where id=$1`, [job2]);
+check('komisyona sayilmayan tahsilat kasada dogrulandi, payments tablosuna yazilmadi', j2.verified_at !== null && j2.payment_id === null
+      && (await one(`select count(*)::int n from received_payments where matched_job_id=$1`, [job2])).n === 1);
+await q(`select member_cancel_rank_order($1,$2)`, [U3, ord3.id]);
+
+const job3 = (await one(`select admin_create_job($1,$2,'NOTIFY',null,'Sunucu 10 dk sonra yeniden basliyor',true,$3) id`, [OP, acc4.id, nt(T7 + 600)])).id;
+jl = (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 610)])).r;
+check('Bildirim emri mesajla birlikte gider (onay gerektirmez)', jl.length === 1 && jl[0].kind === 'NOTIFY' && jl[0].message.includes('yeniden'));
+await q(`select mod_job_ack($1,$2,'DONE',null,null,null,$3)`, [tok4, job3, nt(T7 + 611)]);
+const job4 = (await one(`select admin_create_job($1,$2,'PAY',$3,null,true,$4) id`, [OP, acc4.id, 5 * M, nt(T7 + 700)])).id;
+await q(`select admin_cancel_job($1,$2,null)`, [OP, job4]);
+check('teslim edilmemis emir iptal edilir ve gonderilmez', (await one(`select mod_pull_jobs($1,$2) r`, [tok4, nt(T7 + 710)])).r.length === 0);
+const job5 = (await one(`select admin_create_job($1,$2,'PAY',$3,null,true,$4) id`, [OP, acc4.id, 5 * M, nt(T7 + 800)])).id;
+await q(`select mod_pull_jobs($1,$2)`, [tok4, nt(T7 + 800 + 31 * 60)]);
+check('30 dk icinde teslim alinmayan emir EXPIRED', (await one(`select status from bot_jobs where id=$1`, [job5])).status === 'EXPIRED');
+await q(`select mod_job_ack($1,$2,'RECEIVED',null,null,null,$3)`, [tok4, job5, nt(T7 + 800 + 32 * 60)]);
+check('suresi dolan emri mod sonradan alsa bile calismaz', (await one(`select status from bot_jobs where id=$1`, [job5])).status === 'EXPIRED');
+check('UYE kendi is emirlerini gorur, baskasi goremez', (await asUser(U3, `select * from bot_jobs`)).length >= 5
+      && (await asUser(U1, `select * from bot_jobs`)).length === 0);
+err = '';
+try { await q(`select admin_create_payment_request($1,$2,null,$3,null,null)`, [OP, U3, M]); } catch (e) { err = e.message; }
+check('odeme talebi olusturma devre disi', err.includes('DISABLED'));
+
+console.log('\n[18] Urun bazli satis kayitlari (0006)');
+const sales = [
+  { id: randomUUID(), at: Date.parse(nt(T7 + 900)), itemId: 'minecraft:filled_map', itemName: 'Map', amount: 64, revenue: 450000,
+    cost: 192000, tax: 9000, net: 249000, how: 'single' },
+  { id: randomUUID(), at: Date.parse(nt(T7 + 960)), itemId: null, itemName: 'Diamond Helmet', amount: 1, revenue: 1200000,
+    cost: 800000, tax: 24000, net: 376000, how: 'batch' },
+];
+r = (await one(`select mod_report_sales($1,$2) r`, [tok4, JSON.stringify(sales)])).r;
+const rs2 = (await one(`select mod_report_sales($1,$2) r`, [tok4, JSON.stringify(sales)])).r;
+check('satislar kaydedildi, tekrar gonderim cift kayit yapmaz', r === 2 && rs2 === 0);
+check('bozuk kayit digerlerini engellemez', (await one(`select mod_report_sales($1,$2) r`, [tok4, JSON.stringify([{ id: 'x' }, { ...sales[0], id: randomUUID() }])])).r === 1);
+let sr = (await one(`select sales_report($1,'OPERATOR',null,100,$2) r`, [OP, nt(T7 + 1000)])).r;
+const map = sr.sales.find((x) => x.item_name === 'Map');
+check('operator satis gecmisi: urun, adet, fiyat, birim, net', sr.sales.length === 3 && map.amount === 64 && Number(map.revenue) === 450000
+      && Number(map.unit_price) === 7031 && Number(map.net) === 249000 && map.mc_name === 'Rank3' && map.owner_name);
+// sunucu gelecekteki zaman damgalarini simdiye kirpar: ozeti gercek zamanla al
+const srNow = (await one(`select sales_report($1,'OPERATOR',null,100,null) r`, [OP])).r;
+check('urun ozeti (7 gun)', srNow.by_item.some((x) => x.item === 'Map' && Number(x.count) === 2 && Number(x.amount) === 128));
+await q(`select view_reset($1,'MEMBER','STATS',null,$2)`, [U3, nt(T7 + 1100)]);
+const srm = (await one(`select sales_report($1,'MEMBER',null,100,$2) r`, [U3, nt(T7 + 1200)])).r;
+sr = (await one(`select sales_report($1,'OPERATOR',null,100,$2) r`, [OP, nt(T7 + 1200)])).r;
+check('uye kendi satis listesini sifirlar, operator listesi etkilenmez', srm.sales.length === 0 && sr.sales.length === 3);
+check('baskasi bu satislari goremez', (await asUser(U1, `select * from mod_sales`)).length === 0
+      && (await asUser(U3, `select * from mod_sales`)).length === 3);
+
+console.log('\n[19] +odeme korumasi (0007)');
+err = '';
+try { await q(`select admin_manual_payment($1,$2,$3,null)`, [OP, acc4.id, 10 * M]); } catch (e) { err = e.message; }
+check('+odeme kanitsiz borc dusmez', err.includes('MANUAL_PAYMENT_NEEDS_PROOF'));
+const rcv = (await one(`insert into received_payments (receiver_mc, from_player, amount, tolerance, seen_at) values ('OpBank','Rank3',$1,0,now()) returning id`, [3 * M])).id;
+const rcvOther = (await one(`insert into received_payments (receiver_mc, from_player, amount, tolerance, seen_at) values ('OpBank','BaskaOyuncu',$1,0,now()) returning id`, [3 * M])).id;
+let un = (await one(`select admin_unmatched_received($1,$2) r`, [OP, acc4.id])).r;
+check('kasada gorulen eslesmemis odeme listelenir (sadece bu oyuncunun)', un.some((x) => x.id === rcv) && !un.some((x) => x.id === rcvOther));
+err = '';
+try { await q(`select admin_manual_payment_from_received($1,$2,$3,null)`, [OP, acc4.id, rcvOther]); } catch (e) { err = e.message; }
+check('baska oyuncunun odemesi bu hesaba sayilamaz', err.includes('RECEIVED_FROM_OTHER_PLAYER'));
+const mp = (await one(`select admin_manual_payment_from_received($1,$2,$3,'kasada gordum') id`, [OP, acc4.id, rcv])).id;
+const mpr = await one(`select * from payments where id=$1`, [mp]);
+check('secilen kasa odemesi dogrulanmis odeme olarak kaydedildi ve baglandi', mpr.status === 'VERIFIED' && Number(mpr.amount) === 3 * M
+      && (await one(`select matched_payment_id from received_payments where id=$1`, [rcv])).matched_payment_id === mp);
+err = '';
+try { await q(`select admin_manual_payment_from_received($1,$2,$3,null)`, [OP, acc4.id, rcv]); } catch (e) { err = e.message; }
+check('ayni kasa odemesi ikinci kez kullanilamaz', err.includes('RECEIVED_ALREADY_USED'));
+err = '';
+try { await q(`select admin_manual_payment_from_received($1,$2,$3,null)`, [U3, acc4.id, rcvOther]); } catch (e) { err = e.message; }
+check('uye bu islemi yapamaz', err.length > 0 && !err.includes('RECEIVED'));
 
 console.log(`\nSONUC: ${ok} basarili, ${bad} hatali`);
 process.exit(bad ? 1 : 0);

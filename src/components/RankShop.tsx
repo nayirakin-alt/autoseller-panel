@@ -31,7 +31,6 @@ export function RankShop({ onChange }: { onChange?: () => void }) {
   const cur = d.ranks.find((r: any) => r.code === st.code);
   const buyable = d.ranks.filter((r: any) => Number(r.weekly_price) > 0);
   const pending = d.orders.find((o: any) => o.status === 'PENDING');
-  const openReq = d.requests.filter((r: any) => r.status === 'OPEN');
   const upgradeOnly = quote?.ok && quote.kind === 'UPGRADE';
 
   async function order() {
@@ -48,20 +47,6 @@ export function RankShop({ onChange }: { onChange?: () => void }) {
 
   return (
     <>
-      {openReq.length > 0 && (
-        <div className="card notice">
-          <h2>Ödeme talepleri</h2>
-          <p className="muted">Operatör senden aşağıdaki tutarları kasa hesabına göndermeni istedi. Oyunda komutu yaz; kasa ödemeyi görünce talep
-            kendiliğinden kapanır (birkaç dakika sürebilir). Bu talepler satış komisyonu borcundan ayrıdır.</p>
-          <table><thead><tr><th>#</th><th className="num">Tutar</th><th>Komut</th><th>Not</th><th>Son tarih</th><th>Oluşturuldu</th></tr></thead>
-            <tbody>{openReq.map((r: any) => (
-              <tr key={r.id}><td>{r.id}</td><td className="num accent"><b>{money(r.amount)}</b></td>
-                <td><code>/pay {r.pay_to} {r.amount}</code></td><td>{r.note}</td>
-                <td className="muted">{date(r.due_at)}</td><td className="muted">{ago(r.created_at)}</td></tr>))}
-            </tbody></table>
-        </div>
-      )}
-
       <div className="card">
         <h2>Rütbem</h2>
         <div className="stats">
@@ -142,13 +127,6 @@ export function RankShop({ onChange }: { onChange?: () => void }) {
                 {d.grants.length === 0 && <tr><td colSpan={4} className="muted">Yok.</td></tr>}
               </tbody></table></div>
         </div>
-        {d.requests.some((r: any) => r.status !== 'OPEN') && <>
-          <b style={{ display: 'block', marginTop: 12 }}>Kapanan ödeme talepleri</b>
-          <table><tbody>{d.requests.filter((r: any) => r.status !== 'OPEN').map((r: any) => (
-            <tr key={r.id}><td>#{r.id}</td><td className="num">{money(r.amount)}</td><td>{r.note}</td>
-              <td>{r.status === 'PAID' ? <span className="green">ödendi</span> : <span className="muted">iptal</span>}</td>
-              <td className="muted">{ago(r.paid_at ?? r.created_at)}</td></tr>))}</tbody></table>
-        </>}
       </div>
     </>
   );

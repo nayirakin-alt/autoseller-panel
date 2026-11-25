@@ -1,8 +1,10 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
 import { AdminRanks, activeRankOf } from '@/components/AdminRanks';
-import { AdminRequests, createPaymentRequest } from '@/components/AdminRequests';
+import { AdminJobs } from '@/components/AdminJobs';
+import { AccountPayRow } from '@/components/AccountPayRow';
+import { SalesLog } from '@/components/SalesLog';
 import { Earnings } from '@/components/Earnings';
 import { api, ago, duration, money } from '@/lib/format';
 
@@ -42,7 +44,8 @@ export default function OperatorPanel() {
   const [filter, setFilter] = useState('');
   const [rankInfo, setRankInfo] = useState<any>({ ranks: [], grants: [], orders: [] });
   const [live, setLive] = useState<Record<string, any>>({});
-  const [reqVersion, setReqVersion] = useState(0);
+  const [jobsVersion, setJobsVersion] = useState(0);
+  const [payOpen, setPayOpen] = useState<{ id: string; mode: 'job' | 'manual' } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -89,7 +92,7 @@ export default function OperatorPanel() {
       <div className="tabs">
         {T('accounts', 'Hesaplar', awaiting.length)}
         {T('payments', 'Ödemeler', d.unverifiedPayments.length)}
-        {T('requests', 'Ödeme Talebi')}
+        {T('requests', 'Ödeme Al / İş Emirleri')}
         {T('ranks', 'Rütbeler', rankInfo.orders.filter((o: any) => o.status === 'PENDING').length)}
         {T('earnings', 'Satışlar / Kazanç')}
         {T('operators', 'Operatör Hesapları')}
@@ -127,7 +130,8 @@ export default function OperatorPanel() {
             <tbody>{rows.map((a: any) => {
               const act2 = Number(a.open_window_active_seconds ?? 0);
               return (
-                <tr key={a.id}>
+                <Fragment key={a.id}>
+                <tr>
                   <td><b>{a.mc_name}</b><div className="muted">{a.mod_version ? `v${a.mod_version}` : ''}</div>
                     {a.tamper_flag && <span className="pill red" title={a.tamper_reason}>⚠ {a.tamper_reason}</span>}</td>
                   <td>{a.owner_name}{(() => { const rk = activeRankOf(a.owner_id, rankInfo.grants, rankInfo.ranks).rank; return rk &&
@@ -153,14 +157,19 @@ export default function OperatorPanel() {
                     : <button className="primary" title={a.blocked_reason} onClick={act(() => api(`/api/admin/accounts/${a.id}/access`, { method: 'POST', json: { enabled: true } }))}>Aç</button>}
                     {!a.access_enabled && <div className="muted" style={{ whiteSpace: 'normal', maxWidth: 160 }}>{a.blocked_reason}</div>}
                     <div className="row" style={{ marginTop: 4 }}>
-                      <button onClick={act(async () => { const v = prompt('Elle ödeme tutarı ($)'); if (v) await api(`/api/admin/accounts/${a.id}/manual-payment`, { method: 'POST', json: { amount: Math.round(Number(v)) } }); })}>+ödeme</button>
-                      <button onClick={act(async () => { if (await createPaymentRequest(a.owner_id, `${a.owner_name} / ${a.mc_name}`, a.id)) setReqVersion((v) => v + 1); })}>Ödeme talebi</button>
+                      <button className="primary" onClick={() => setPayOpen(payOpen?.id === a.id && payOpen?.mode === 'job' ? null : { id: a.id, mode: 'job' })}>Ödeme al</button>
+                      <button title="Sadece kasada görülmüş ödemeyi borca sayar" onClick={() => setPayOpen(payOpen?.id === a.id && payOpen?.mode === 'manual' ? null : { id: a.id, mode: 'manual' })}>+ödeme</button>
                       {a.tamper_flag && <button onClick={act(() => api(`/api/admin/accounts/${a.id}/clear-tamper`, { method: 'POST', json: {} }))}>bayrağı kaldır</button>}
                     </div>
                   </td>
-                </tr>);
+                </tr>
+                {payOpen?.id === a.id && (
+                  <AccountPayRow account={a} owner={d.users.find((u: any) => u.id === a.owner_id)} receiver={receiver} colSpan={12}
+                    mode={payOpen!.mode} onDone={() => { setJobsVersion((v) => v + 1); load(); }} onClose={() => setPayOpen(null)} />
+                )}
+                </Fragment>);
             })}
-            {rows.length === 0 && <tr><td colSpan={11} className="muted">Hesap yok.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={12} className="muted">Hesap yok.</td></tr>}
             </tbody>
           </table></div>
         </div>
@@ -253,9 +262,11 @@ export default function OperatorPanel() {
         </div>
       )}
 
-      {tab === 'requests' && <AdminRequests users={d.users} accounts={d.accounts} receiver={receiver} version={reqVersion} />}
+      {tab === 'requests' && <>
+        <AdminJobs accounts={d.accounts} users={d.users} receiver={receiver} version={jobsVersion} />
+      </>}
       {tab === 'ranks' && <AdminRanks users={d.users} />}
-      {tab === 'earnings' && <Earnings scope="admin" />}
+      {tab === 'earnings' && <><SalesLog scope="admin" /><Earnings scope="admin" /></>}
 
       {tab === 'users' && (
         <div className="card">
@@ -276,7 +287,7 @@ export default function OperatorPanel() {
                     : <button onClick={act(() => api(`/api/admin/users/${u.id}/status`, { method: 'POST', json: { status: 'ACTIVE' } }))}>Aktif et</button>}
                   <button onClick={act(() => api(`/api/admin/users/${u.id}/role`, { method: 'POST', json: { role: u.role === 'OPERATOR' ? 'UYE' : 'OPERATOR' } }))}>
                     {u.role === 'OPERATOR' ? 'Üye yap' : 'Operatör yap'}</button>
-                  <button onClick={act(async () => { if (await createPaymentRequest(u.id, u.display_name)) setReqVersion((v) => v + 1); })}>Ödeme talebi</button>
+                  <button onClick={() => setTab('requests')}>Ödeme al</button>
                   <button onClick={() => setTab('ranks')}>Rütbe hediye</button>
                 </td></tr>))}
             </tbody></table>
