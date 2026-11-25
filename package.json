@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "name": "autoseller-panel",
   "version": "0.1.0",
   "private": true,
@@ -27,3 +28,9 @@
     "typescript": "^5.7.2"
   }
 }
+=======
+  "dependencies": {
+    "next": "^16.4.6"
+  }
+}
+>>>>>>> 6d59e9c (Update Next.js to latest patched version)
